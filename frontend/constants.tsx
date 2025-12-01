@@ -15,6 +15,9 @@ export const APP_NAME = "SkillXL";
 export const TAGLINE = "Empowering Colleges, Students & Companies.";
 export const SUB_TAGLINE = "SkillXL – Your Bridge to Opportunities.";
 
+// LIVE BACKEND URL (Not Localhost)
+export const API_BASE_URL = "https://skillxl-backend.onrender.com";
+
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Home', path: '/' },
   { label: 'Services', path: '/services' },

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Section, Card, Button, Input, TextArea } from '../components/UI';
 import { Mail, Phone, Calendar, CheckCircle2, XCircle, Clock, Send, Search, Lock, AlertTriangle } from 'lucide-react';
 import { FormType } from '../types';
+import { API_BASE_URL } from '../constants';
 
 interface Submission {
   _id: string;
@@ -40,7 +41,7 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchSubmissions = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/submissions');
+      const res = await fetch(`${API_BASE_URL}/api/submissions`);
       if (res.ok) {
         const data = await res.json();
         setSubmissions(data);
@@ -60,7 +61,7 @@ export const AdminDashboard: React.FC = () => {
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {
-      await fetch(`http://localhost:5000/api/submissions/${id}`, {
+      await fetch(`${API_BASE_URL}/api/submissions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -80,7 +81,7 @@ export const AdminDashboard: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      const res = await fetch('http://localhost:5000/api/reply', {
+      const res = await fetch(`${API_BASE_URL}/api/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

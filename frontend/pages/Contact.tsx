@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Section, Input, TextArea, Button, Card } from '../components/UI';
 import { Mail, MapPin, Phone, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { API_BASE_URL } from '../constants';
 
 export const Contact: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,7 @@ export const Contact: React.FC = () => {
     };
 
     try {
-      const response = await fetch('http://localhost:5000/api/submit', {
+      const response = await fetch(`${API_BASE_URL}/api/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -102,7 +103,6 @@ export const Contact: React.FC = () => {
                 <Input label="Your Name" id="name" name="name" placeholder="Enter your name" required />
                 <div className="grid md:grid-cols-2 gap-6">
                   <Input label="Email Address" id="email" name="email" type="email" placeholder="Enter your email" required />
-                  <Input label="Job Title / Role" id="role" name="role" placeholder="e.g. Student, HR" required />
                 </div>
                 <TextArea label="Message" id="message" name="message" placeholder="How can we help you?" required />
                 
@@ -114,7 +114,7 @@ export const Contact: React.FC = () => {
                 )}
                 
                 <Button className="w-full" disabled={loading}>
-                  {loading ? 'Sending...' : 'SendMessage'}
+                  {loading ? 'Sending... (Server waking up, takes ~60s)' : 'SendMessage'}
                 </Button>
               </form>
             )}

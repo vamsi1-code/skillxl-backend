@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Section, Card, Input, TextArea, Select, Button } from '../components/UI';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { API_BASE_URL } from '../constants';
 
 export const RequestForm: React.FC = () => {
   const { type } = useParams<{ type: string }>();
@@ -49,7 +50,7 @@ export const RequestForm: React.FC = () => {
     };
 
     try {
-      const response = await fetch('http://localhost:5000/api/submit', {
+      const response = await fetch(`${API_BASE_URL}/api/submit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,7 +66,7 @@ export const RequestForm: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
-      setError('Unable to connect to the server. Please try again later or contact us directly.');
+      setError('Unable to connect to the server. If this persists, please call us directly.');
     } finally {
       setLoading(false);
     }
@@ -157,7 +158,7 @@ export const RequestForm: React.FC = () => {
               )}
 
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Submitting...' : 'Submit Request'}
+                {loading ? 'Sending... (Server waking up, takes ~60s)' : 'Submit Request'}
               </Button>
               
               <p className="text-xs text-slate-500 text-center mt-4">
