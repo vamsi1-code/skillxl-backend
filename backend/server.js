@@ -11,8 +11,8 @@ const PORT = process.env.PORT || 5000;
 
 // NOTICE: The password 'Skillxl@123' contains special characters (@).
 // We must URL Encode it to 'Skillxl%40123' so the connection string parses correctly.
-const DEFAULT_MONGO_URI = 'mongodb+srv://skillxl_user:Skillxl@cluster0.elco56s.mongodb.net/?appName=Cluster0';
-const MONGO_URI = DEFAULT_MONGO_URI;
+const DEFAULT_MONGO_URI = 'mongodb+srv://skillxl_user:Skillxl%40123@cluster0.68s12ic.mongodb.net/?appName=Cluster0';
+const MONGO_URI = process.env.MONGO_URI || DEFAULT_MONGO_URI;
 
 // Middleware
 app.use(cors());
