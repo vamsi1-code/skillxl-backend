@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 5000;
 
 // NOTICE: The password 'Skillxl@123' contains special characters (@).
 // We must URL Encode it to 'Skillxl%40123' so the connection string parses correctly.
-const DEFAULT_MONGO_URI = 'mongodb+srv://skillxl_user:Skillxl%40123@cluster0.68s12ic.mongodb.net/?appName=Cluster0';
+const DEFAULT_MONGO_URI = 'mongodb+srv://skillxl_user:Skillxl%40123@cluster0.68s12ic.mongodb.net/skillxl?appName=Cluster0';
 const MONGO_URI = process.env.MONGO_URI || DEFAULT_MONGO_URI;
 
 // Middleware
@@ -19,22 +19,35 @@ app.use(cors());
 app.use(express.json());
 
 // Connect to MongoDB
-mongoose.connect(MONGO_URI)
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: 5000, // Fail faster if blocked
+  socketTimeoutMS: 45000,
+})
   .then(() => console.log('✅ MongoDB Connected Successfully to Cloud'))
   .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-// --- EMAIL CONFIGURATION ---
+// --- EMAIL CONFIGURATION (SECURE SSL) ---
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465, // Secure SSL Port
+  secure: true, // Use SSL
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
-  }
+  },
+  connectionTimeout: 10000, // 10 seconds timeout
+  greetingTimeout: 5000,
+  socketTimeout: 10000
 });
 
 // Routes
 app.get('/', (req, res) => {
   res.send('SkillXL API is running');
+});
+
+// Health Check for Deployments
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
 });
 
 // POST: Submit a new form
@@ -104,34 +117,38 @@ app.post('/api/reply', async (req, res) => {
   try {
     const { id, to, subject, message, originalRequest } = req.body;
     
-    // 1. VALIDATE EMAIL DOMAIN (DNS CHECK)
+    // 1. CHECK CREDENTIALS FIRST
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.warn("⚠️ Email credentials missing in .env.");
+      return res.status(500).json({ error: 'Server Email Config Missing. Add EMAIL_USER and EMAIL_PASS to Render Environment Variables.' });
+    }
+
+    // 2. VALIDATE EMAIL DOMAIN (DNS CHECK with Timeout)
     const domain = to.split('@')[1];
     if (domain) {
       try {
-        await new Promise((resolve, reject) => {
-          dns.resolveMx(domain, (err, addresses) => {
-            if (err || !addresses || addresses.length === 0) {
-              return reject(new Error('Invalid Email Domain (No MX Records found)'));
-            }
-            resolve(addresses);
-          });
-        });
+        await Promise.race([
+          new Promise((resolve, reject) => {
+            dns.resolveMx(domain, (err, addresses) => {
+              if (err || !addresses || addresses.length === 0) {
+                return reject(new Error('Invalid Email Domain'));
+              }
+              resolve(addresses);
+            });
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('DNS Timeout')), 5000)) // 5s Timeout
+        ]);
       } catch (dnsError) {
-        console.error(`DNS Validation Failed for ${to}:`, dnsError.message);
-        return res.status(400).json({ error: `Invalid Email Domain: @${domain} does not exist or cannot receive emails.` });
+        console.warn(`DNS Validation Warning for ${to}:`, dnsError.message);
+        // We proceed if it's a timeout (could be just slow network), but fail if explicit invalid domain
+        if (dnsError.message === 'Invalid Email Domain') {
+           return res.status(400).json({ error: `Invalid Email Domain: @${domain} does not exist.` });
+        }
       }
     }
 
-    // 2. CHECK CREDENTIALS
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.warn("⚠️ Email credentials missing in .env. Logging email instead.");
-      console.log(`[MOCK EMAIL] To: ${to} | Subject: ${subject}`);
-      
-      await Submission.findByIdAndUpdate(id, { status: 'contacted' });
-      return res.json({ success: true, message: 'Mock email sent (check server console)' });
-    }
-
     // 3. BUILD HTML CONTENT
+    // Fix: Removed 'white-space: pre-wrap' and used trim() to prevent unwanted indentation.
     let htmlContent = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
         <div style="border-bottom: 2px solid #06b6d4; padding-bottom: 10px; margin-bottom: 20px;">
@@ -139,8 +156,8 @@ app.post('/api/reply', async (req, res) => {
           <span style="font-size: 12px; color: #666;">The Bridge to Opportunity</span>
         </div>
         
-        <div style="font-size: 15px; color: #1f2937; white-space: pre-wrap;">
-          ${message.replace(/\n/g, '<br>')}
+        <div style="font-size: 15px; color: #1f2937;">
+          ${message.trim().replace(/\n/g, '<br>')}
         </div>
 
         <br>
