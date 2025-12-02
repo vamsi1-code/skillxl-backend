@@ -97,12 +97,12 @@ app.put('/api/submissions/:id', async (req, res) => {
   }
 });
 
-// POST: Send Reply Email via Brevo API
+// POST: Send Reply Email via Brevo HTTP API
 app.post('/api/reply', async (req, res) => {
   try {
     const { id, to, subject, message, originalRequest } = req.body;
     
-    // 1. CHECK CREDENTIALS
+    // 1. GET CREDENTIALS FROM ENV
     const apiKey = process.env.BREVO_API_KEY;
     const senderEmail = process.env.EMAIL_USER;
 
@@ -124,7 +124,7 @@ app.post('/api/reply', async (req, res) => {
         </div>
 
         <br>
-        <p style="font-size: 13px; color: #666;">Best Regards,<br><strong>SkillXL Support Team</strong><br><a href="mailto:vamsiskillxl@gmail.com" style="color:#06b6d4">vamsiskillxl@gmail.com</a></p>
+        <p style="font-size: 13px; color: #666;">Best Regards,<br><strong>SkillXL Support Team</strong><br><a href="mailto:${senderEmail}" style="color:#06b6d4">${senderEmail}</a></p>
     `;
 
     // Append Original Request Details
@@ -147,7 +147,7 @@ app.post('/api/reply', async (req, res) => {
 
     htmlContent += `</div>`;
 
-    // 3. SEND EMAIL VIA BREVO API
+    // 3. SEND REQUEST TO BREVO API
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -170,18 +170,23 @@ app.post('/api/reply', async (req, res) => {
       })
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Brevo API Error:', errorData);
-      throw new Error(JSON.stringify(errorData));
+      console.error('Brevo API Error:', data);
+      throw new Error(data.message || 'Failed to send email via Brevo');
     }
 
     // 4. UPDATE STATUS
-    await Submission.findByIdAndUpdate(id, { status: 'contacted' });
+    if (id) {
+        await Submission.findByIdAndUpdate(id, { status: 'contacted' });
+    }
 
-    res.json({ success: true, message: 'Email sent successfully via Brevo' });
+    console.log(`📧 Email sent to ${to} via Brevo API`);
+    res.json({ success: true, message: 'Email sent successfully' });
+
   } catch (error) {
-    console.error('Email Error:', error);
+    console.error('Email API Error:', error);
     res.status(500).json({ error: 'Failed to send email. ' + error.message });
   }
 });
