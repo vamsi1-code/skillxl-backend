@@ -14,7 +14,7 @@ const MONGO_URI = process.env.MONGO_URI || DEFAULT_MONGO_URI;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit for Base64 attachments
 
 // Connect to MongoDB
 mongoose.connect(MONGO_URI, {
@@ -100,7 +100,7 @@ app.put('/api/submissions/:id', async (req, res) => {
 // POST: Send Reply Email via Brevo HTTP API
 app.post('/api/reply', async (req, res) => {
   try {
-    const { id, to, subject, message, originalRequest } = req.body;
+    const { id, to, subject, message, originalRequest, attachments } = req.body;
     
     // 1. GET CREDENTIALS FROM ENV
     const apiKey = process.env.BREVO_API_KEY;
@@ -147,7 +147,31 @@ app.post('/api/reply', async (req, res) => {
 
     htmlContent += `</div>`;
 
-    // 3. SEND REQUEST TO BREVO API
+    // 3. CONSTRUCT BREVO PAYLOAD
+    const emailPayload = {
+      sender: {
+        name: 'SkillXL Support',
+        email: senderEmail
+      },
+      to: [
+        {
+          email: to
+        }
+      ],
+      subject: subject,
+      htmlContent: htmlContent
+    };
+
+    // Add attachments if present
+    if (attachments && Array.isArray(attachments) && attachments.length > 0) {
+      // Brevo expects array of { content: 'base64', name: 'filename' }
+      emailPayload.attachment = attachments.map(file => ({
+        content: file.content,
+        name: file.name
+      }));
+    }
+
+    // 4. SEND REQUEST TO BREVO API
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -155,19 +179,7 @@ app.post('/api/reply', async (req, res) => {
         'content-type': 'application/json',
         'api-key': apiKey
       },
-      body: JSON.stringify({
-        sender: {
-          name: 'SkillXL Support',
-          email: senderEmail
-        },
-        to: [
-          {
-            email: to
-          }
-        ],
-        subject: subject,
-        htmlContent: htmlContent
-      })
+      body: JSON.stringify(emailPayload)
     });
 
     const data = await response.json();
@@ -177,7 +189,7 @@ app.post('/api/reply', async (req, res) => {
       throw new Error(data.message || 'Failed to send email via Brevo');
     }
 
-    // 4. UPDATE STATUS
+    // 5. UPDATE STATUS
     if (id) {
         await Submission.findByIdAndUpdate(id, { status: 'contacted' });
     }
