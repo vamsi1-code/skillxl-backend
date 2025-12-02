@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Section, Card, Button, Input, TextArea } from '../components/UI';
-import { Mail, Phone, Calendar, CheckCircle2, XCircle, Clock, Send, Search, Lock, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, Button, Input, TextArea } from '../components/UI';
+import { Mail, Phone, Clock, Send, Search, Lock, AlertTriangle, Paperclip, X, FileText } from 'lucide-react';
 import { FormType } from '../types';
 import { API_BASE_URL } from '../constants';
 
@@ -19,14 +19,25 @@ interface Submission {
   createdAt: string;
 }
 
+interface Attachment {
+  name: string;
+  content: string; // Base64 string
+  type: string;
+}
+
 export const AdminDashboard: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pin, setPin] = useState('');
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState<Submission | null>(null);
+  
+  // Reply State
   const [replySubject, setReplySubject] = useState('');
   const [replyMessage, setReplyMessage] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [sendingEmail, setSendingEmail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -61,17 +72,68 @@ export const AdminDashboard: React.FC = () => {
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {
+      const validStatus = newStatus as Submission['status'];
       await fetch(`${API_BASE_URL}/api/submissions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ status: validStatus })
       });
-      setSubmissions(prev => prev.map(s => s._id === id ? { ...s, status: newStatus as any } : s));
-      if (selectedLead?._id === id) setSelectedLead(prev => prev ? { ...prev, status: newStatus as any } : null);
+      setSubmissions(prev => prev.map(s => s._id === id ? { ...s, status: validStatus } : s));
+      if (selectedLead?._id === id) setSelectedLead(prev => prev ? { ...prev, status: validStatus } : null);
     } catch (err) {
       console.error("Failed to update status", err);
     }
   };
+
+  // --- FILE HANDLING START ---
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      // Explicitly type as File[] to satisfy TypeScript
+      const files = Array.from(e.target.files || []) as File[];
+      const newAttachments: Attachment[] = [];
+      const MAX_SIZE = 4 * 1024 * 1024; // 4MB Limit (Brevo restriction is ~10MB total)
+
+      for (const file of files) {
+        if (file.size > MAX_SIZE) {
+          alert(`File ${file.name} is too large. Max size is 4MB.`);
+          continue;
+        }
+
+        try {
+          const base64 = await convertFileToBase64(file);
+          newAttachments.push({
+            name: file.name,
+            content: base64,
+            type: file.type
+          });
+        } catch (error) {
+          console.error("Error reading file", file.name, error);
+        }
+      }
+      setAttachments(prev => [...prev, ...newAttachments]);
+      // Reset input so same file can be selected again if needed
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data:image/png;base64, part because Brevo just wants the raw base64 string
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+  // --- FILE HANDLING END ---
 
   const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +151,7 @@ export const AdminDashboard: React.FC = () => {
           to: selectedLead.email,
           subject: replySubject,
           message: replyMessage,
-          // PASS ORIGINAL DETAILS TO BACKEND
+          attachments: attachments.map(a => ({ name: a.name, content: a.content })), // Send to backend
           originalRequest: {
             name: selectedLead.name,
             role: selectedLead.role || 'Not Specified', 
@@ -106,6 +168,7 @@ export const AdminDashboard: React.FC = () => {
         handleStatusUpdate(selectedLead._id, 'contacted');
         setReplyMessage('');
         setReplySubject('');
+        setAttachments([]); // Clear attachments
         setSelectedLead(null);
       } else {
         setErrorMessage(data.error || 'Failed to send email.');
@@ -137,6 +200,7 @@ export const AdminDashboard: React.FC = () => {
           <h2 className="text-2xl font-bold mb-6">Admin Access</h2>
           <form onSubmit={handleLogin}>
             <Input 
+              id="admin-pin"
               label="Enter PIN" 
               type="password" 
               value={pin} 
@@ -246,7 +310,7 @@ export const AdminDashboard: React.FC = () => {
                 <div className="grid md:grid-cols-2 gap-6 mb-8">
                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
                     <h5 className="text-xs text-slate-500 uppercase tracking-wider mb-2">Request Type</h5>
-                    <p className="text-white font-medium">{selectedLead.formType === 'contact' ? 'General Inquiry' : 'Service Request'}</p>
+                    <p className="text-white font-medium">{selectedLead.formType === FormType.CONTACT ? 'General Inquiry' : 'Service Request'}</p>
                     <p className="text-neon-blue text-sm">{selectedLead.requestCategory}</p>
                   </div>
                   <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
@@ -280,6 +344,7 @@ export const AdminDashboard: React.FC = () => {
 
                   <form onSubmit={handleSendReply} className="space-y-4">
                     <Input 
+                      id="reply-subject"
                       label="Subject" 
                       value={replySubject} 
                       onChange={(e) => setReplySubject(e.target.value)}
@@ -288,6 +353,7 @@ export const AdminDashboard: React.FC = () => {
                       required
                     />
                     <TextArea 
+                      id="reply-message"
                       label="Response" 
                       value={replyMessage}
                       onChange={(e) => setReplyMessage(e.target.value)}
@@ -295,21 +361,65 @@ export const AdminDashboard: React.FC = () => {
                       className="bg-slate-950 min-h-[150px]"
                       required
                     />
-                    <div className="flex justify-end gap-3">
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        onClick={() => {
-                          setReplySubject('');
-                          setReplyMessage('');
-                          setErrorMessage(null);
-                        }}
-                      >
-                        Clear
-                      </Button>
-                      <Button type="submit" disabled={sendingEmail}>
-                        {sendingEmail ? 'Sending...' : 'Send Reply via Email'}
-                      </Button>
+
+                    {/* ATTACHMENT SECTION */}
+                    <div className="flex flex-col gap-2">
+                      <input 
+                        type="file" 
+                        multiple 
+                        ref={fileInputRef}
+                        className="hidden" 
+                        onChange={handleFileSelect}
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      />
+                      
+                      {/* Attachments List */}
+                      {attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {attachments.map((file, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-slate-800 text-sm text-slate-300 px-3 py-1.5 rounded-md border border-slate-700">
+                              <FileText className="w-3 h-3 text-neon-blue" />
+                              <span className="truncate max-w-[150px]">{file.name}</span>
+                              <button 
+                                type="button" 
+                                onClick={() => removeAttachment(idx)}
+                                className="text-slate-500 hover:text-red-400 ml-1"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center">
+                        <button 
+                          type="button" 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center gap-2 text-sm text-neon-blue hover:text-neon-purple transition-colors font-medium px-2 py-1 rounded hover:bg-slate-800/50"
+                        >
+                          <Paperclip className="w-4 h-4" />
+                          Attach Files
+                        </button>
+                        
+                        <div className="flex gap-3">
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            onClick={() => {
+                              setReplySubject('');
+                              setReplyMessage('');
+                              setAttachments([]);
+                              setErrorMessage(null);
+                            }}
+                          >
+                            Clear
+                          </Button>
+                          <Button type="submit" disabled={sendingEmail}>
+                            {sendingEmail ? 'Sending...' : 'Send Reply via Email'}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </form>
                 </div>
