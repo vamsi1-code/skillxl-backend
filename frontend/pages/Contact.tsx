@@ -62,7 +62,7 @@ export const Contact: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-white text-lg">Visit Us</h3>
-                  <p className="text-slate-400">Hyderabad, India<br />All Over India Online Service</p>
+                  <p className="text-slate-400">Hyderabad, India<br />All Over India Online & offline Service</p>
                 </div>
               </div>
               
@@ -72,7 +72,7 @@ export const Contact: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="font-bold text-white text-lg">Email Us</h3>
-                  <p className="text-slate-400">support@skillxl.in</p>
+                  <p className="text-slate-400">vamsiskillxl@gmail.com</p>
                 </div>
               </div>
 
