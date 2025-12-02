@@ -1,8 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
-const dns = require('dns');
 const Submission = require('./models/Submission');
 require('dotenv').config();
 
@@ -26,20 +24,6 @@ mongoose.connect(MONGO_URI, {
   .then(() => console.log('✅ MongoDB Connected Successfully to Cloud'))
   .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-// --- EMAIL CONFIGURATION (SECURE SSL) ---
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587, // TSL Port
-  secure: false, // Use SSL
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  connectionTimeout: 10000, // 10 seconds timeout
-  greetingTimeout: 5000,
-  socketTimeout: 10000
-});
-
 // Routes
 app.get('/', (req, res) => {
   res.send('SkillXL API is running');
@@ -47,6 +31,7 @@ app.get('/', (req, res) => {
 
 // Health Check for Deployments
 app.get('/health', (req, res) => {
+  console.log('Health check pinged');
   res.status(200).send('OK');
 });
 
@@ -112,43 +97,21 @@ app.put('/api/submissions/:id', async (req, res) => {
   }
 });
 
-// POST: Send Reply Email
+// POST: Send Reply Email via Brevo API
 app.post('/api/reply', async (req, res) => {
   try {
     const { id, to, subject, message, originalRequest } = req.body;
     
-    // 1. CHECK CREDENTIALS FIRST
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.warn("⚠️ Email credentials missing in .env.");
-      return res.status(500).json({ error: 'Server Email Config Missing. Add EMAIL_USER and EMAIL_PASS to Render Environment Variables.' });
+    // 1. CHECK CREDENTIALS
+    const apiKey = process.env.BREVO_API_KEY;
+    const senderEmail = process.env.EMAIL_USER;
+
+    if (!apiKey || !senderEmail) {
+      console.warn("⚠️ Brevo credentials missing in .env.");
+      return res.status(500).json({ error: 'Server Config Missing: BREVO_API_KEY or EMAIL_USER' });
     }
 
-    // 2. VALIDATE EMAIL DOMAIN (DNS CHECK with Timeout)
-    const domain = to.split('@')[1];
-    if (domain) {
-      try {
-        await Promise.race([
-          new Promise((resolve, reject) => {
-            dns.resolveMx(domain, (err, addresses) => {
-              if (err || !addresses || addresses.length === 0) {
-                return reject(new Error('Invalid Email Domain'));
-              }
-              resolve(addresses);
-            });
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('DNS Timeout')), 5000)) // 5s Timeout
-        ]);
-      } catch (dnsError) {
-        console.warn(`DNS Validation Warning for ${to}:`, dnsError.message);
-        // We proceed if it's a timeout (could be just slow network), but fail if explicit invalid domain
-        if (dnsError.message === 'Invalid Email Domain') {
-           return res.status(400).json({ error: `Invalid Email Domain: @${domain} does not exist.` });
-        }
-      }
-    }
-
-    // 3. BUILD HTML CONTENT
-    // Fix: Removed 'white-space: pre-wrap' and used trim() to prevent unwanted indentation.
+    // 2. BUILD HTML CONTENT
     let htmlContent = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
         <div style="border-bottom: 2px solid #06b6d4; padding-bottom: 10px; margin-bottom: 20px;">
@@ -161,7 +124,7 @@ app.post('/api/reply', async (req, res) => {
         </div>
 
         <br>
-        <p style="font-size: 13px; color: #666;">Best Regards,<br><strong>SkillXL Support Team</strong><br><a href="mailto:support@skillxl.in" style="color:#06b6d4">support@skillxl.in</a></p>
+        <p style="font-size: 13px; color: #666;">Best Regards,<br><strong>SkillXL Support Team</strong><br><a href="mailto:vamsiskillxl@gmail.com" style="color:#06b6d4">vamsiskillxl@gmail.com</a></p>
     `;
 
     // Append Original Request Details
@@ -184,19 +147,39 @@ app.post('/api/reply', async (req, res) => {
 
     htmlContent += `</div>`;
 
-    // 4. SEND EMAIL
-    await transporter.sendMail({
-      from: `"SkillXL Support" <${process.env.EMAIL_USER}>`,
-      to: to,
-      subject: subject,
-      text: message, // Fallback
-      html: htmlContent
+    // 3. SEND EMAIL VIA BREVO API
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': apiKey
+      },
+      body: JSON.stringify({
+        sender: {
+          name: 'SkillXL Support',
+          email: senderEmail
+        },
+        to: [
+          {
+            email: to
+          }
+        ],
+        subject: subject,
+        htmlContent: htmlContent
+      })
     });
 
-    // 5. UPDATE STATUS
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Brevo API Error:', errorData);
+      throw new Error(JSON.stringify(errorData));
+    }
+
+    // 4. UPDATE STATUS
     await Submission.findByIdAndUpdate(id, { status: 'contacted' });
 
-    res.json({ success: true, message: 'Email sent successfully' });
+    res.json({ success: true, message: 'Email sent successfully via Brevo' });
   } catch (error) {
     console.error('Email Error:', error);
     res.status(500).json({ error: 'Failed to send email. ' + error.message });
