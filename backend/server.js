@@ -28,9 +28,9 @@ mongoose.connect(MONGO_URI, {
 
 // --- EMAIL CONFIGURATION (SECURE SSL) ---
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465, // Secure SSL Port
-  secure: true, // Use SSL
+  host: 'smtp-relay.brevo.com',
+  port: 587, // TSL Port
+  secure: false, // Use SSL
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
